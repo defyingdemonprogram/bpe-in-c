@@ -10,7 +10,7 @@
 #include "stb_ds.h"
 
 #undef swap
-#define swap(Type, x, y)        \
+#define swap(Type, x, y)         \
     do {                         \
         Type temp = (x);         \
         (x) = (y);               \
@@ -35,6 +35,9 @@ typedef struct {
     size_t capacity;
 } Tokens;
 
+void usage(const char *program_name) {
+    fprintf(stderr, "Usage: %s <input.txt>\n", program_name);
+}
 
 bool dump_pairs(const char *file_path, Pairs pairs) {
     return write_entire_file(file_path, pairs.items, pairs.count*sizeof(*pairs.items));
@@ -59,18 +62,27 @@ void render_tokens(Pairs pairs, Tokens tokens) {
     printf("\n-----------------------------\n");
 }
 
-int main() {
-    const char *text = "The original BPE algorithm operates by iteratively replacing the most common contiguous sequences of characters in a target text with unused 'placeholder' bytes. The iteration ends when no sequences can be found, leaving the target text effectively compressed. Decompression can be performed by reversing this process, querying known placeholder terms against their corresponding denoted sequence, using a lookup table. In the original paper, this lookup table is encoded and stored alongside the compressed text.";
+int main(int argc, char **argv) {
+    const char *program_name = shift(argv, argc);
 
-    int text_size = strlen(text);
+    if (argc <= 0) {
+        usage(program_name);
+        fprintf(stderr, "ERROR: no input text file is provided\n");
+        return 1;
+    }
+
+    const char *input_file_path = shift(argv, argc);
+    String_Builder sb = {0};
+    if(!nob_read_entire_file(input_file_path, &sb)) return 1;
+    sb_append_null(&sb);
 
     Freq *freq = NULL;
     Pairs pairs = {0};
 
     Tokens tokens_in = {0};
     Tokens tokens_out = {0};
-    for (int i = 0; i < text_size; ++i) {
-        da_append(&tokens_in, text[i]);
+    for (int i = 0; i < sb.counts; ++i) {
+        da_append(&tokens_in, sb.items[i]);
     }
 
     // 0   => { .l = 0, .r = ??? }

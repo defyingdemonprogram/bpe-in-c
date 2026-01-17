@@ -4,22 +4,39 @@ Byte Pair Encoding (BPE) is a compression algorithm originally introduced in 199
 
 A slightly modified version of this algorithm is widely used in tokenizers for large language models. While the original BPE algorithm focuses on compression, its adaptation for tokenization replaces the most frequent byte pairs with new tokens that do not appear in the initial dataset.
 
-## Getting Started
+## Quick Start
 
 1. Build the project using `nob`:
 
-```bash
-cc -o nob nob.c  # run this only the first time
-./nob
-```
+    ```bash
+    cc -o nob nob.c  # run this only the first time
+    ./nob
+    ```
 
 2. Run the executable:
 
-```bash
-./build/bpe
-```
+    ```bash
+    ./build/text2bpe <input.txt>
+    ```
+
+    `<input.txt>` is the file whose content is used to generate the BPE data. This command generates the `pairs.bin` file.
+
+    You may convert `pairs.bin` to a `.dot` file, which can be used to visualize how tokens are related using Graphviz.
+
+    Convert the pairs into a `.dot` file:
+
+    ```bash
+    ./build/bpe2dot <input.bin> <output.dot>
+    ```
+
+    Generate a PNG file from the generated `.dot` file using:
+
+    ```bash
+    dot -Tpng input.dot -o output.png
+    ```
 
 ## References
 
-* **stb_ds.h – nothings.org**: A single-header library providing type-safe dynamic arrays and hash tables.
-* **Byte Pair Encoding – Wikipedia**: [https://en.wikipedia.org/wiki/Byte-pair_encoding](https://en.wikipedia.org/wiki/Byte-pair_encoding)
+* **[stb_ds.h – nothings.org](https://nothings.org/stb_ds/)**: A single-header library providing type-safe dynamic arrays and hash tables.
+* **[Byte Pair Encoding – Wikipedia](https://en.wikipedia.org/wiki/Byte-pair_encoding)**
+* **[nob.h – GitHub](https://github.com/tsoding/nob.h)**

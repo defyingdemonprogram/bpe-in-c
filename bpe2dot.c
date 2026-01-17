@@ -5,6 +5,10 @@
 #define NOB_STRIP_PREFIX
 #include "nob.h"
 
+void usage(const char *program_name) {
+    fprintf(stderr, "Usage: %s <input.bin> <output.dot>\n", program_name);
+}
+
 bool load_pairs(const char *file_path, Pairs *pairs, String_Builder *sb) {
     if (!read_entire_file(file_path, sb)) return false;
     if (sb->count % sizeof(*pairs->items) != 0) {
@@ -35,13 +39,13 @@ int main(int argc, char **argv) {
     const char *program_name = shift(argv, argc);
 
     if (argc <= 0) {
-        fprintf(stderr, "Usage: %s <input.bin> <output.dot>\n", program_name);
+        usage(program_name);
         fprintf(stderr, "ERROR: no input is provided\n");
         return 1;
     }
     const char *input_file_path = shift(argv, argc);
     if (argc <= 0) {
-        fprintf(stderr, "Usage: %s <input.bin> <output.dot>\n", program_name);
+        usage(program_name);
         fprintf(stderr, "ERROR: no output is provided\n");
         return 1;
     }
