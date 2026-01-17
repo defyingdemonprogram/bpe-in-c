@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
 
     Tokens tokens_in = {0};
     Tokens tokens_out = {0};
-    for (int i = 0; i < sb.counts; ++i) {
+    for (size_t i = 0; i < sb.count; ++i) {
         da_append(&tokens_in, sb.items[i]);
     }
 
@@ -97,7 +97,7 @@ int main(int argc, char **argv) {
 
     for(;;) {
         // printf("%zu: \n", tokens_in.count);
-        render_tokens(pairs, tokens_in);
+        // render_tokens(pairs, tokens_in);
         hmfree(freq);
         for (size_t i = 0; i < tokens_in.count - 1; ++i) {
             Pair pair = {
