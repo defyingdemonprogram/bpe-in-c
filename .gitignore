@@ -1,0 +1,9 @@
+# Executable
+nob
+nob.old
+/build
+# Files
+*.dot
+*.png
+*.bin
+
