@@ -1,9 +1,7 @@
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
-#define NOB_IMPLEMENTATION
-#define NOB_STRIP_PREFIX
-#include "nob.h"
 #include "bpe.h"
 
 #define STB_DS_IMPLEMENTATION
@@ -104,9 +102,9 @@ int main(int argc, char **argv) {
                 .l = tokens_in.items[i], 
                 .r = tokens_in.items[i + 1]
             };
-            ptrdiff_t i = hmgeti(freq, pair);
-            if (i < 0) hmput(freq, pair, 1);
-            else freq[i].value += 1;
+            ptrdiff_t idx = hmgeti(freq, pair);
+            if (idx < 0) hmput(freq, pair, 1);
+            else freq[idx].value += 1;
         }
 
         Freqs sorted_freqs = {0};
@@ -157,6 +155,6 @@ int main(int argc, char **argv) {
     //   printf("(%d, %d) => %zu\n", sorted_freqs.items[i].key.l, sorted_freqs.items[i].key.r, sorted_freqs.items[i].value);
     // }
     //
-    if (!dump_pairs("pairs.bin", pairs)) return 1;
+    if (!dump_pairs("pairs.bpe", pairs)) return 1;
     return 0;
 }

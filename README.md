@@ -19,14 +19,14 @@ A slightly modified version of this algorithm is widely used in tokenizers for l
     ./build/text2bpe <input.txt>
     ```
 
-    `<input.txt>` is the file whose content is used to generate the BPE data. This command generates the `pairs.bin` file.
+    `<input.txt>` is the file whose content is used to generate the BPE data. This command generates the `pairs.bpe` file.
 
-    You may convert `pairs.bin` to a `.dot` file, which can be used to visualize how tokens are related using Graphviz.
+    You may convert `pairs.bpe` to a `.dot` file, which can be used to visualize how tokens are related using Graphviz.
 
     Convert the pairs into a `.dot` file:
 
     ```bash
-    ./build/bpe2dot <input.bin> <output.dot>
+    ./build/bpe2dot <input.bpe> <output.dot>
     ```
 
     Generate a PNG file from the generated `.dot` file using:
