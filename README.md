@@ -16,12 +16,12 @@ A slightly modified version of this algorithm is widely used in tokenizers for l
 2. Run the executable:
 
     ```bash
-    ./build/text2bpe <input.txt>
+    ./build/text2bpe <input.txt> <output.bpe>
     ```
 
-    `<input.txt>` is the file whose content is used to generate the BPE data. This command generates the `pairs.bpe` file.
+    `<input.txt>` is the file whose content is used to generate the BPE data. This command generates the `<output.bpe>` file.
 
-    You may convert `pairs.bpe` to a `.dot` file, which can be used to visualize how tokens are related using Graphviz.
+    You may convert `output.bpe` to a `.dot` file, which can be used to visualize how tokens are related using Graphviz.
 
     Convert the pairs into a `.dot` file:
 

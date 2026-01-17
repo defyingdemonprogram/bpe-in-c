@@ -34,7 +34,13 @@ typedef struct {
 } Tokens;
 
 void usage(const char *program_name) {
-    fprintf(stderr, "Usage: %s <input.txt>\n", program_name);
+    fprintf(stderr, "Usage: %s <input.txt> <output.bpe>\n", program_name);
+}
+
+void report_progress(size_t iteration, Tokens tokens_in, Pairs pairs) {
+    printf("INFO: iteration %zu\n", iteration);
+    printf("    Text tokens count: %zu\n", tokens_in.count);
+    printf("    BPE table size: %zu\n", pairs.count);
 }
 
 bool dump_pairs(const char *file_path, Pairs pairs) {
@@ -47,19 +53,6 @@ int compare_freqs(const void *a, const void *b) {
     return ((int) bf->value - (int) af->value);
 }
 
-void render_tokens(Pairs pairs, Tokens tokens) {
-    for (size_t i = 0; i < tokens.count; ++i) {
-        uint32_t token = tokens.items[i];
-        assert(token < pairs.count);
-        if (pairs.items[token].l == token) {
-            printf("%c", token);
-        } else {
-            printf("[%u]", token);
-        }
-    }
-    printf("\n-----------------------------\n");
-}
-
 int main(int argc, char **argv) {
     const char *program_name = shift(argv, argc);
 
@@ -68,8 +61,15 @@ int main(int argc, char **argv) {
         fprintf(stderr, "ERROR: no input text file is provided\n");
         return 1;
     }
-
     const char *input_file_path = shift(argv, argc);
+
+    if (argc <= 0) {
+        usage(program_name);
+        fprintf(stderr, "ERROR: no input text file is provided\n");
+        return 1;
+    }
+    const char *output_file_path = shift(argv, argc);
+
     String_Builder sb = {0};
     if(!nob_read_entire_file(input_file_path, &sb)) return 1;
     sb_append_null(&sb);
@@ -93,9 +93,9 @@ int main(int argc, char **argv) {
         da_append(&pairs, ((Pair) { .l = i }));
     }
 
-    for(;;) {
-        // printf("%zu: \n", tokens_in.count);
-        // render_tokens(pairs, tokens_in);
+    size_t iteration = 0;
+    for(;; ++iteration) {
+        if (iteration % 100 == 0) report_progress(iteration, tokens_in, pairs);
         hmfree(freq);
         for (size_t i = 0; i < tokens_in.count - 1; ++i) {
             Pair pair = {
@@ -143,11 +143,11 @@ int main(int argc, char **argv) {
         }
         swap(Tokens, tokens_in, tokens_out);
     }
-    printf("Generated %zu tokens\n", pairs.count);
+    report_progress(iteration, tokens_in, pairs);
 
-    // render_tokens(pairs, tokens_in);
+    printf("[INFO]: Generated %zu tokens\n", pairs.count);
+
     // printf("\n\n\n");
-    // render_tokens(pairs, tokens_out);
     // printf("%zu\n", tokens_in.count);
     // printf("%zu\n", tokens_out.count);
     // qsort(sorted_freqs.items, sorted_freqs.count, sizeof(*sorted_freqs.items), compare_freqs);
@@ -155,6 +155,6 @@ int main(int argc, char **argv) {
     //   printf("(%d, %d) => %zu\n", sorted_freqs.items[i].key.l, sorted_freqs.items[i].key.r, sorted_freqs.items[i].value);
     // }
     //
-    if (!dump_pairs("pairs.bpe", pairs)) return 1;
+    if (!dump_pairs(output_file_path, pairs)) return 1;
     return 0;
 }
