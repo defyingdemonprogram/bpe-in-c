@@ -29,12 +29,6 @@ typedef struct {
     size_t capacity;
 } Freqs;
 
-typedef struct {
-    uint32_t *items;
-    size_t count;
-    size_t capacity;
-} Tokens;
-
 void usage(const char *program_name) {
     fprintf(stderr, "Usage: %s <input.txt> <output.bpe>\n", program_name);
 }
@@ -121,10 +115,6 @@ void report_progress(size_t iteration, Tokens tokens_in, Pairs pairs) {
     printf("    BPE table size: %zu\n", pairs.count);
 }
 
-bool dump_pairs(const char *file_path, Pairs pairs) {
-    return write_entire_file(file_path, pairs.items, pairs.count*sizeof(*pairs.items));
-}
-
 int compare_freqs(const void *a, const void *b) {
     const Freq *af = a;
     const Freq *bf = b;
@@ -163,12 +153,12 @@ int main(int argc, char **argv) {
     // 69  => { .l = 69, .r = ??? }
     // ....
     // 255 => { .l = 255, .r = ??? }
-    for (uint32_t i = 0; i < 256; ++i) {
+    for (uint32_t i = 0; i < BPE_PRELUDE_SIZE; ++i) {
         da_append(&pairs, ((Pair) { .l = i }));
     }
 
     for (size_t i = 0; i < sb.count; ++i) {
-        da_append(&tokens_in, sb.items[i]);
+        da_append(&tokens_in, (uint8_t)sb.items[i]);
     }
 
 #ifdef ENABLE_THREADS

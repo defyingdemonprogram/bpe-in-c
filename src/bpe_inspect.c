@@ -6,24 +6,28 @@ void usage(const char *program_name) {
     fprintf(stderr, "Usage: %s <input.bpe>\n", program_name);
 }
 
-void render_token(Pairs pairs, uint32_t token, String_Builder *sb) {
-    if (token == pairs.items[token].l) {
-        da_append(sb, (char)token);
-        return;
-    }
-
-    render_token(pairs, pairs.items[token].l, sb);
-    render_token(pairs, pairs.items[token].r, sb);
-}
-
 int main(int argc, char **argv) {
     const char *program_name = shift(argv, argc);
-    if (argc <= 0) {
+    const char *input_file_path = NULL;
+    bool no_ids = false;
+
+    while (argc > 0) {
+        const char *arg = shift(argv, argc);
+        if (strcmp(arg, "--no-ids") == 0) {
+            no_ids = true;
+        } else {
+            if (input_file_path != NULL) {
+                fprintf(stderr, "ERROR: %s supports inspecting only single file\n", program_name);
+                return 1;
+            }
+            input_file_path = arg;
+        }
+    }
+    if (input_file_path == NULL) {
         usage(program_name);
         fprintf(stderr, "ERROR: no input is provided\n");
         return 1;
     }
-    const char *input_file_path = shift(argv, argc);
 
     Pairs pairs = {0};
     String_Builder sb = {0};
@@ -31,7 +35,8 @@ int main(int argc, char **argv) {
     if (!load_pairs(input_file_path, &pairs, &sb)) return 1;
 
     for (uint32_t token = 1; token < pairs.count; ++token) {
-        printf("%u => \"", token);
+        if (!no_ids) printf("%u => ", token);
+        printf("\"");
         sb.count = 0;
         render_token(pairs, token, &sb);
         for (size_t i = 0; i < sb.count; ++i) {

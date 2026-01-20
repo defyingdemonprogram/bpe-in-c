@@ -7,6 +7,14 @@
 #define NOB_STRIP_PREFIX
 #include "nob.h"
 
+#define BPE_PRELUDE_SIZE 256
+
+typedef struct {
+    uint32_t *items;
+    size_t count;
+    size_t capacity;
+} Tokens;
+
 typedef struct {
     uint32_t l, r;
 } Pair;
@@ -17,5 +25,7 @@ typedef struct {
     size_t capacity;
 } Pairs;
 
+bool dump_pairs(const char *file_path, Pairs pairs);
 bool load_pairs(const char *file_path, Pairs *pairs, String_Builder *sb);
+void render_token(Pairs pairs, uint32_t token, String_Builder *sb);
 #endif // BPE_H_
