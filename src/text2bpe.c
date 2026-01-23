@@ -31,7 +31,7 @@ typedef struct {
 } Freqs;
 
 void usage() {
-    fprintf(stderr, "Usage: %s [OPTIONS] [--] <input.txt> <output/>\n", flag_program_name());
+    fprintf(stderr, "Usage: %s [OPTIONS]\n", flag_program_name());
     fprintf(stderr, "OPTIONS:\n");
     flag_print_options(stderr);
 }
@@ -113,10 +113,69 @@ void create_freq_collector_thread(Freq_Collector_Thread_Context *ctx, size_t id,
     assert(ret == 0);
 }
 
-void report_progress(size_t iteration, Tokens tokens_in, Pairs pairs) {
+typedef struct {
+    Freq_Collector_Thread_Context *ctxs;
+    size_t ctxs_count;
+    pthread_barrier_t start;
+    pthread_barrier_t stop;
+} Freq_Collector;
+
+void freq_collector_init(Freq_Collector *fc, size_t threads_count, const Tokens *tokens_in) {
+    fc->ctxs_count = threads_count;
+
+    int ret;
+    ret = pthread_barrier_init(&fc->start, NULL, fc->ctxs_count + 1);
+    assert(ret == 0);
+    ret = pthread_barrier_init(&fc->stop, NULL, fc->ctxs_count + 1);
+    assert(ret == 0);
+    fc->ctxs = calloc(threads_count, sizeof(*fc->ctxs));
+    assert(fc->ctxs != NULL);
+    for (size_t id = 0; id < threads_count; ++id) {
+        create_freq_collector_thread(&fc->ctxs[id], id, fc->ctxs_count, tokens_in, &fc->start, &fc->stop);
+    }
+}
+
+Freq *freq_collector_go(Freq_Collector *fc) {
+    pthread_barrier_wait(&fc->start);
+    pthread_barrier_wait(&fc->stop);
+
+    Freq *merged_freq = NULL;
+    for (size_t id = 0; id < fc->ctxs_count; ++id ) {
+        size_t n = hmlen(fc->ctxs[id].freqs);
+        for (size_t i = 0; i < n; ++i) {
+            Pair key = fc->ctxs[id].freqs[i].key;
+            ptrdiff_t idx = hmgeti(merged_freq, key);
+            if (idx < 0) hmputs(merged_freq, fc->ctxs[id].freqs[i]);
+            else merged_freq[idx].value += fc->ctxs[id].freqs[i].value;
+        }
+    }
+    return merged_freq;
+}
+
+Freq *collect_freqs(Tokens tokens_in) {
+    Freq *freq = NULL;
+    for (size_t i = 0; i < tokens_in.count - 1; ++i) {
+        Pair pair = {
+            .l = tokens_in.items[i], 
+            .r = tokens_in.items[i + 1]
+        };
+        ptrdiff_t idx = hmgeti(freq, pair);
+        if (idx < 0) hmput(freq, pair, 1);
+        else freq[idx].value += 1;
+    }
+    return freq;
+}
+
+void report_progress(size_t iteration, Tokens tokens_in, Pairs pairs, double *profile_samples, size_t profile_samples_count) {
+    double average_profile_samples = 0.0f;
+    for (size_t i = 0; i < profile_samples_count; ++i) {
+        average_profile_samples += profile_samples[i];
+    }
+    average_profile_samples /= profile_samples_count;
     printf("INFO: -- ITERATION %zu --\n", iteration);
-    printf("    Text tokens count: %zu\n", tokens_in.count);
-    printf("    BPE table size: %zu\n", pairs.count);
+    printf("    Tokens count: %zu\n", tokens_in.count);
+    printf("    Pair Count:   %zu\n", pairs.count);
+    printf("    Time:         %lfsecs (avg. of %zu iter.)\n", average_profile_samples, profile_samples_count);
 }
 
 int compare_freqs(const void *a, const void *b) {
@@ -186,7 +245,7 @@ int main(int argc, char **argv) {
     if(!nob_read_entire_file(input_file_path, &sb)) return 1;
     sb_append_null(&sb);
 
-    Freq *merged_freq = NULL;
+    Freq *freq = NULL;
     Pairs pairs = {0};
 
     Tokens tokens_in = {0};
@@ -207,84 +266,40 @@ int main(int argc, char **argv) {
     }
 
 #ifdef ENABLE_THREADS
-    pthread_barrier_t collect_freqs_start = {0};
-    pthread_barrier_t collect_freqs_stop  = {0};
-    int ret;
-    ret = pthread_barrier_init(&collect_freqs_start, NULL, (*threads_count) + 1);
-    if (ret != 0) {
-        fprintf(stderr, "ERROR: could not initialize collect_freqs_start: %s\n", strerror(ret));
-        return 1;
-    }
-
-    ret = pthread_barrier_init(&collect_freqs_stop, NULL, (*threads_count) + 1);
-    if (ret != 0) {
-        fprintf(stderr, "ERROR: could not initialize collect_freqs_stop: %s\n", strerror(ret));
-        return 1;
-    }
-
-    Freq_Collector_Thread_Context *ctxs = calloc(*threads_count, sizeof(*ctxs));
-    assert(ctxs != NULL);
-    for (size_t id = 0; id < *threads_count; ++id) {
-        create_freq_collector_thread(&ctxs[id], id, *threads_count, &tokens_in, &collect_freqs_start, &collect_freqs_stop);
-    }
+    Freq_Collector fc = {0};
+    freq_collector_init(&fc, *threads_count, &tokens_in);
 #endif // ENABLE_THREADS
+    
+    double *profile_samples = malloc((*report_freq)*sizeof(*profile_samples));
+    assert(profile_samples != NULL);
 
     size_t iteration = 0;
     for(;(*max_iterations == 0 || iteration < *max_iterations); ++iteration) {
-        if (iteration % (*report_freq) == 0) report_progress(iteration, tokens_in, pairs);
+        if (iteration % (*report_freq) == 0) report_progress(iteration, tokens_in, pairs, profile_samples, *report_freq);
         if (iteration % (*dump_freq)   == 0) if (!dump_state(iteration, output_dir_path, pairs, tokens_in)) return 1;
-        PROFILE_BEGIN();
-        hmfree(merged_freq);
-#ifndef ENABLE_THREADS
-        for (size_t i = 0; i < tokens_in.count - 1; ++i) {
-            Pair pair = {
-                .l = tokens_in.items[i], 
-                .r = tokens_in.items[i + 1]
-            };
-            ptrdiff_t idx = hmgeti(merged_freq, pair);
-            if (idx < 0) hmput(merged_freq, pair, 1);
-            else merged_freq[idx].value += 1;
-        }
+        double begin_secs = get_secs();
+        hmfree(freq);
+#ifdef ENABLE_THREADS
+        freq = freq_collector_go(&fc);
 #else
-        pthread_barrier_wait(&collect_freqs_start);
-        pthread_barrier_wait(&collect_freqs_stop);
-
-        for (size_t id = 0; id < *threads_count; ++id ) {
-            size_t n = hmlen(ctxs[id].freqs);
-            for (size_t i = 0; i < n; ++i) {
-                Pair key = ctxs[id].freqs[i].key;
-                ptrdiff_t idx = hmgeti(merged_freq, key);
-                if (idx < 0) hmputs(merged_freq, ctxs[id].freqs[i]);
-                else merged_freq[idx].value += ctxs[id].freqs[i].value;
-            }
-        }
+        freq = collect_freqs(tokens_in);
 #endif // ENABLE_THREADS
-        PROFILE_END("Collecting stats");
 
-        //Freqs sorted_freqs = {0};
-
-        //for (ptrdiff_t i = 0; i < hmlen(merged_freq); ++i) {
-        //    da_append(&sorted_freqs, freq[i]);
-        // }
-
-        PROFILE_BEGIN();
         ptrdiff_t max_index = 0;
-        size_t n = hmlen(merged_freq);
+        size_t n = hmlen(freq);
         if (n == 0) break;
         for (size_t i = 1; i < n; ++i) {
-            if (merged_freq[i].value > merged_freq[max_index].value) {
+            if (freq[i].value > freq[max_index].value) {
                 max_index = i;
             }
         }
-        PROFILE_END("Finding most frequent pairs");
 
-        if (merged_freq[max_index].value <= (*term_freq)) break; // Compression is finished
+        if (freq[max_index].value <= (*term_freq)) break; // Compression is finished
 
         // printf("(%d, %d) => %zu\n", freq[max_index].key.l, freq[max_index].key.r, freq[max_index].value);
 
-        da_append(&pairs, merged_freq[max_index].key);
+        da_append(&pairs, freq[max_index].key);
 
-        PROFILE_BEGIN();
         tokens_out.count = 0;  // Clear the garbage before feeding to token out
         for (size_t i = 0; i < tokens_in.count; ) {
             if (i + 1 >= tokens_in.count) {
@@ -292,7 +307,7 @@ int main(int argc, char **argv) {
                 i += 1;
             } else {
                 Pair pair = {.l = tokens_in.items[i], .r = tokens_in.items[i + 1]};
-                if (memcmp(&pair, &merged_freq[max_index].key, sizeof(pair)) == 0) {
+                if (memcmp(&pair, &freq[max_index].key, sizeof(pair)) == 0) {
                     da_append(&tokens_out, pairs.count - 1);
                     i += 2;
                 } else {
@@ -301,10 +316,11 @@ int main(int argc, char **argv) {
                 }
             }
         }
-        PROFILE_END("Replacing the frequent pair");
+        profile_samples[iteration%(*report_freq)] = get_secs() - begin_secs;
         swap(Tokens, tokens_in, tokens_out);
     }
-    report_progress(iteration, tokens_in, pairs);
+    size_t remainder_iterations = iteration%(*report_freq);
+    report_progress(iteration, tokens_in, pairs, profile_samples, remainder_iterations == 0 ? *report_freq : remainder_iterations);
 
     // printf("\n\n\n");
     // printf("%zu\n", tokens_in.count);
