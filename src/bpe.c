@@ -10,6 +10,10 @@ void render_token(Pairs pairs, uint32_t token, String_Builder *sb) {
     render_token(pairs, pairs.items[token].r, sb);
 }
 
+bool dump_tokens(const char *file_path, Tokens tokens) {
+    return write_entire_file(file_path, tokens.items, tokens.count*sizeof(*tokens.items));
+}
+
 bool dump_pairs(const char *file_path, Pairs pairs) {
     return write_entire_file(file_path, pairs.items, pairs.count*sizeof(*pairs.items));
 }

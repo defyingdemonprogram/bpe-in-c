@@ -13,26 +13,38 @@ A slightly modified version of this algorithm is widely used in tokenizers for l
     ./nob
     ```
 
-2. Run the executable:
+2. Run the executable
 
     ```bash
-    ./build/text2bpe <input.txt> <output.bpe>
+    ./build/text2bpe -input-file <input.txt> -output-dir <output-dir>
     ```
 
-    `<input.txt>` is the file whose content is used to generate the BPE data. This command generates the `<output.bpe>` file.
+    * `<input.txt>`: input text used to generate BPE merges
+    * `<output-dir>`: directory where BPE iteration files will be written
 
-    You may convert `output.bpe` to a `.dot` file, which can be used to visualize how tokens are related using Graphviz.
+    By default, the tool runs until no pair exceeds the termination frequency and dumps progress every 10 iterations. Each iteration is written to `<output-dir>` as `<iteration>.bpe`.
 
-    Convert the pairs into a `.dot` file:
+    Optional flags:
+
+    ```bash
+    -report-freq <int>      # progress reporting frequency (default: 10)
+    -dump-freq <int>        # dump state frequency (default: 10)
+    -term-freq <int>        # termination pair frequency (default: 1)
+    -max-iterations <int>   # max iterations, 0 = no limit (default: 0)
+    ```
+
+3. Visualize BPE merges (optional)
+
+    Convert a `.bpe` file to Graphviz `.dot` format:
 
     ```bash
     ./build/bpe2dot <input.bpe> <output.dot>
     ```
 
-    Generate a PNG file from the generated `.dot` file using:
+    Generate a PNG from the `.dot` file:
 
     ```bash
-    dot -Tpng input.dot -o output.png
+    dot -Tpng output.dot -o output.png
     ```
 
 ## References

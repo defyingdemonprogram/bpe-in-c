@@ -2,8 +2,11 @@
 nob
 nob.old
 /build
+/bpe_bin
 # Files
 *.dot
 *.png
 *.bin
 *.bpe
+bigfile.txt
+stats.txt

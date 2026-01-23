@@ -3,12 +3,13 @@
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
-#include <semaphore.h>
 
 #include "bpe.h"
 
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
+#define FLAG_IMPLEMENTATION
+#include "flag.h"
 
 #undef swap
 #define swap(Type, x, y)         \
@@ -29,8 +30,10 @@ typedef struct {
     size_t capacity;
 } Freqs;
 
-void usage(const char *program_name) {
-    fprintf(stderr, "Usage: %s <input.txt> <output.bpe>\n", program_name);
+void usage() {
+    fprintf(stderr, "Usage: %s [OPTIONS] [--] <input.txt> <output/>\n", flag_program_name());
+    fprintf(stderr, "OPTIONS:\n");
+    flag_print_options(stderr);
 }
 
 double get_secs(void) {
@@ -41,7 +44,7 @@ double get_secs(void) {
 }
 
 double begin_secs;
-#if 1
+#if 0
     #define PROFILE_BEGIN() begin_secs = get_secs();
     #define PROFILE_END(label) printf("%s: %lfsecs\n", (label), get_secs() - begin_secs);
 #else
@@ -51,66 +54,42 @@ double begin_secs;
 
 #define ENABLE_THREADS
 #define THREAD_COUNT 16
-#define REPORT_FREQ 1
-#define FREQ_COLLECTION_CHUNK_SIZE (4*1024)
 Tokens tokens_in = {0};
-size_t tokens_in_cursor = 0;
-pthread_mutex_t tokens_in_cursor_mutex = {0};
 
 Freq *freqs[THREAD_COUNT] = {0};
 pthread_t threads[THREAD_COUNT] = {0};
-sem_t collect_freqs_start = {0};
+pthread_barrier_t collect_freqs_start = {0};
 pthread_barrier_t collect_freqs_stop = {0};
 
-void *freq_collector(void *arg) {
+void *freq_collector_thread(void *arg) {
     size_t id = (size_t)(uintptr_t)(arg);
 
     while (true) {
-        int ret = sem_wait(&collect_freqs_start);
-        if (ret == -1) {
-            fprintf(stderr, "ERROR: could not wait on semaphore: %s\n", strerror(errno));
-            exit(1);
-        }    
+        pthread_barrier_wait(&collect_freqs_start);
 
         hmfree(freqs[id]);
 
-        while (true) {
-            size_t begin, end;
-            pthread_mutex_lock(&tokens_in_cursor_mutex);
-            if (tokens_in_cursor + FREQ_COLLECTION_CHUNK_SIZE <= tokens_in.count) {
-                begin = tokens_in_cursor;
-                tokens_in_cursor += FREQ_COLLECTION_CHUNK_SIZE;
-                end = tokens_in_cursor;
-            } else {
-                begin = tokens_in_cursor;
-                tokens_in_cursor = tokens_in.count;
-                end = tokens_in_cursor;
-            }
-            if (begin >= tokens_in.count) {
-                pthread_mutex_unlock(&tokens_in_cursor_mutex);
-                break;
-            }
-            pthread_mutex_unlock(&tokens_in_cursor_mutex);
-
-            for (size_t i = begin; i < end; ++i) {
-                if (i + 1 >= tokens_in.count) break;
-                Pair pair = {
-                    .l = tokens_in.items[i],
-                    .r = tokens_in.items[i + 1]
-                };
-                ptrdiff_t idx = hmgeti(freqs[id], pair);
-                if (idx < 0) hmput(freqs[id], pair, 1);
-                else freqs[id][idx].value += 1;
-            }
+        size_t chunk_size = tokens_in.count / THREAD_COUNT;
+        size_t begin      = chunk_size * id;
+        size_t end          = chunk_size * (id + 1);
+        if (id + 1 >= THREAD_COUNT) end += tokens_in.count % THREAD_COUNT;
+        for (size_t i = begin; i < end; ++i) {
+            if (i + 1 >= tokens_in.count) break;
+            Pair pair = {
+                .l = tokens_in.items[i],
+                .r = tokens_in.items[i + 1]
+            };
+            ptrdiff_t idx = hmgeti(freqs[id], pair);
+            if (idx < 0) hmput(freqs[id], pair, 1);
+            else freqs[id][idx].value += 1;
         }
-
         pthread_barrier_wait(&collect_freqs_stop);
     }
-    UNREACHABLE("freq_collector");
+    UNREACHABLE("freq_collector_thread");
 }
 
 void report_progress(size_t iteration, Tokens tokens_in, Pairs pairs) {
-    printf("INFO: iteration %zu\n", iteration);
+    printf("INFO: -- ITERATION %zu --\n", iteration);
     printf("    Text tokens count: %zu\n", tokens_in.count);
     printf("    BPE table size: %zu\n", pairs.count);
 }
@@ -121,22 +100,59 @@ int compare_freqs(const void *a, const void *b) {
     return ((int) bf->value - (int) af->value);
 }
 
+bool dump_state(size_t iteration, const char *output_dir_path, Pairs pairs, Tokens tokens) {
+    const char *output_file_path = temp_sprintf("%s/%zu.bpe", output_dir_path, iteration);
+    if (!dump_pairs(output_file_path, pairs)) return false;
+    printf("INFO: Generated pairs file %s\n", output_file_path);
+
+    output_file_path = temp_sprintf("%s/%zu.tkn", output_dir_path, iteration);
+    if (!dump_tokens(output_file_path, tokens)) return false;
+    printf("INFO: Generated token file %s\n", output_file_path);
+
+    return true;
+}
+
 int main(int argc, char **argv) {
-    const char *program_name = shift(argv, argc);
+    uint64_t *report_freq = flag_uint64("report-freq", 10, "Per how many iterations report the progress");
+    uint64_t *dump_freq = flag_uint64("dump-freq", 10, "Per how many iterations we dump state of the progress");
+    uint64_t *term_freq = flag_uint64("term-freq", 1, "Termination pair frequency");
+    uint64_t *max_iterations = flag_uint64("max-iterations", 0, "Maximum amount of iterations. 0 means no limit");
+    bool *help = flag_bool("help", false, "Print this help");
+    char **input_file = flag_str("input-file", NULL, "Input text file (MANDATORY)");
+    char **output_dir = flag_str("output-dir", NULL, "Output directory (MANDATORY)");\
 
-    if (argc <= 0) {
-        usage(program_name);
-        fprintf(stderr, "ERROR: no input text file is provided\n");
+    if (!flag_parse(argc, argv)) {
+        usage();
+        flag_print_error(stderr);
         return 1;
     }
-    const char *input_file_path = shift(argv, argc);
 
-    if (argc <= 0) {
-        usage(program_name);
-        fprintf(stderr, "ERROR: no output is provided\n");
+    if (*help) {
+        usage();
+        return 0;
+    }
+
+    if (*input_file == NULL) {
+        usage();
+        fprintf(stderr, "ERROR: no %s is provided\n", flag_name(input_file));
         return 1;
     }
-    const char *output_file_path = shift(argv, argc);
+    const char *input_file_path = *input_file;
+
+    if (*output_dir == NULL) {
+        usage();
+        fprintf(stderr, "ERROR: no %s is provided\n", flag_name(output_dir));
+    }
+
+    const char *output_dir_path = *output_dir;
+    int output_dir_exists = file_exists(output_dir_path);
+    if (output_dir_exists < 0) return 1;
+    if (output_dir_exists) {
+        fprintf(stderr, "ERROR: Directory %s already exists, delete it or rename it to not lose any data in it\n", output_dir_path);
+        return 1;
+    }
+
+    if (!mkdir_if_not_exists(output_dir_path)) return 1;
 
     String_Builder sb = {0};
     if(!nob_read_entire_file(input_file_path, &sb)) return 1;
@@ -162,13 +178,8 @@ int main(int argc, char **argv) {
     }
 
 #ifdef ENABLE_THREADS
-    int ret = pthread_mutex_init(&tokens_in_cursor_mutex, NULL);
-    if (ret != 0) {
-        fprintf(stderr, "ERROR: could not initialize tokens_in_cursor_mutex: %s\n", strerror(ret));
-        return 1;
-    }
-
-    ret = sem_init(&collect_freqs_start, 0, 0);
+    int ret;
+    ret = pthread_barrier_init(&collect_freqs_start, NULL, THREAD_COUNT + 1);
     if (ret != 0) {
         fprintf(stderr, "ERROR: could not initialize collect_freqs_start: %s\n", strerror(ret));
         return 1;
@@ -181,7 +192,7 @@ int main(int argc, char **argv) {
     }
 
     for (size_t id = 0; id < THREAD_COUNT; ++id) {
-        ret = pthread_create(&threads[id], NULL, freq_collector, (void*)(uintptr_t)id);
+        ret = pthread_create(&threads[id], NULL, freq_collector_thread, (void*)(uintptr_t)id);
         if (ret != 0) {
             fprintf(stderr, "ERROR: could not create thread: %s\n", strerror(ret));
             return 1;
@@ -190,8 +201,9 @@ int main(int argc, char **argv) {
 #endif // ENABLE_THREADS
 
     size_t iteration = 0;
-    for(;; ++iteration) {
-        if (iteration % REPORT_FREQ == 0) report_progress(iteration, tokens_in, pairs);
+    for(;(*max_iterations == 0 || iteration < *max_iterations); ++iteration) {
+        if (iteration % (*report_freq) == 0) report_progress(iteration, tokens_in, pairs);
+        if (iteration % (*dump_freq)   == 0) if (!dump_state(iteration, output_dir_path, pairs, tokens_in)) return 1;
         PROFILE_BEGIN();
         hmfree(merged_freq);
 #ifndef ENABLE_THREADS
@@ -205,12 +217,7 @@ int main(int argc, char **argv) {
             else merged_freq[idx].value += 1;
         }
 #else
-        pthread_mutex_lock(&tokens_in_cursor_mutex);
-        tokens_in_cursor = 0;
-        tokens_in_cursor = 0;
-        pthread_mutex_unlock(&tokens_in_cursor_mutex);
-
-        for (size_t i = 0; i < THREAD_COUNT; ++i) sem_post(&collect_freqs_start);
+        pthread_barrier_wait(&collect_freqs_start);
         pthread_barrier_wait(&collect_freqs_stop);
 
         for (size_t id = 0; id < THREAD_COUNT; ++id ) {
@@ -242,7 +249,7 @@ int main(int argc, char **argv) {
         }
         PROFILE_END("Finding most frequent pairs");
 
-        if (merged_freq[max_index].value <= 1) break; // Compression is finished
+        if (merged_freq[max_index].value <= (*term_freq)) break; // Compression is finished
 
         // printf("(%d, %d) => %zu\n", freq[max_index].key.l, freq[max_index].key.r, freq[max_index].value);
 
@@ -278,7 +285,6 @@ int main(int argc, char **argv) {
     //   printf("(%d, %d) => %zu\n", sorted_freqs.items[i].key.l, sorted_freqs.items[i].key.r, sorted_freqs.items[i].value);
     // }
     //
-    if (!dump_pairs(output_file_path, pairs)) return 1;
-    printf("INFO: Generated %s file for BPE.\n", output_file_path);
+    if (!dump_state(iteration, output_dir_path, pairs, tokens_in)) return 1;
     return 0;
 }
