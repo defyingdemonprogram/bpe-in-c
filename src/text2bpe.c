@@ -53,39 +53,64 @@ double begin_secs;
 #endif
 
 #define ENABLE_THREADS
-#define THREAD_COUNT 16
-Tokens tokens_in = {0};
 
-Freq *freqs[THREAD_COUNT] = {0};
-pthread_t threads[THREAD_COUNT] = {0};
-pthread_barrier_t collect_freqs_start = {0};
-pthread_barrier_t collect_freqs_stop = {0};
+typedef struct {
+    size_t id;
+    size_t thread_count;
+    Freq *freqs;
+    const Tokens *tokens_in;
+    pthread_t thread;
+    pthread_barrier_t *start;
+    pthread_barrier_t *stop;
+} Freq_Collector_Thread_Context;
 
-void *freq_collector_thread(void *arg) {
-    size_t id = (size_t)(uintptr_t)(arg);
+void *freq_collector_thread_routine(void *arg) {
+    Freq_Collector_Thread_Context *ctx = arg;
 
     while (true) {
-        pthread_barrier_wait(&collect_freqs_start);
+        pthread_barrier_wait(ctx->start);
 
-        hmfree(freqs[id]);
+        hmfree(ctx->freqs);
 
-        size_t chunk_size = tokens_in.count / THREAD_COUNT;
-        size_t begin      = chunk_size * id;
-        size_t end          = chunk_size * (id + 1);
-        if (id + 1 >= THREAD_COUNT) end += tokens_in.count % THREAD_COUNT;
+        size_t chunk_size = ctx->tokens_in->count / ctx->thread_count;
+        size_t begin      = chunk_size * ctx->id;
+        size_t end        = chunk_size * (ctx->id + 1);
+        if (ctx->id + 1 >= ctx->thread_count) end += ctx->tokens_in->count % ctx->thread_count;
         for (size_t i = begin; i < end; ++i) {
-            if (i + 1 >= tokens_in.count) break;
+            if (i + 1 >= ctx->tokens_in->count) break;
             Pair pair = {
-                .l = tokens_in.items[i],
-                .r = tokens_in.items[i + 1]
+                .l = ctx->tokens_in->items[i],
+                .r = ctx->tokens_in->items[i + 1]
             };
-            ptrdiff_t idx = hmgeti(freqs[id], pair);
-            if (idx < 0) hmput(freqs[id], pair, 1);
-            else freqs[id][idx].value += 1;
+            ptrdiff_t idx = hmgeti(ctx->freqs, pair);
+            if (idx < 0) hmput(ctx->freqs, pair, 1);
+            else ctx->freqs[idx].value += 1;
         }
-        pthread_barrier_wait(&collect_freqs_stop);
+        pthread_barrier_wait(ctx->stop);
     }
-    UNREACHABLE("freq_collector_thread");
+    UNREACHABLE("freq_collector_thread_routine");
+}
+
+void create_freq_collector_thread(Freq_Collector_Thread_Context *ctx, size_t id, size_t thread_count, const Tokens *tokens_in, pthread_barrier_t *start, pthread_barrier_t *stop) {
+    static_assert(sizeof(Freq_Collector_Thread_Context) ==
+                    sizeof(ctx->id)
+                 +  sizeof(ctx->thread_count)
+                 +  sizeof(ctx->freqs)
+                 +  sizeof(ctx->tokens_in)
+                 +  sizeof(ctx->thread)
+                 +  sizeof(ctx->start)
+                 +  sizeof(ctx->stop),
+                 "Size of Freq_Collectorr_Context have changed (or you are compiling not on x86_64). "
+                 "You may want to update the constructor below.");
+    ctx->id = id;
+    ctx->thread_count = thread_count;
+    ctx->freqs = NULL;
+    ctx->tokens_in = tokens_in;
+    memset(&ctx->thread, 0, sizeof(ctx->thread));
+    ctx->start = start;
+    ctx->stop = stop;
+    int ret = pthread_create(&ctx->thread, NULL, freq_collector_thread_routine, ctx);
+    assert(ret == 0);
 }
 
 void report_progress(size_t iteration, Tokens tokens_in, Pairs pairs) {
@@ -114,9 +139,10 @@ bool dump_state(size_t iteration, const char *output_dir_path, Pairs pairs, Toke
 
 int main(int argc, char **argv) {
     uint64_t *report_freq = flag_uint64("report-freq", 10, "Per how many iterations report the progress");
-    uint64_t *dump_freq = flag_uint64("dump-freq", 10, "Per how many iterations we dump state of the progress");
+    uint64_t *dump_freq = flag_uint64("dump-freq", 10, "Per how many iterations dump state of the progress");
     uint64_t *term_freq = flag_uint64("term-freq", 1, "Termination pair frequency");
     uint64_t *max_iterations = flag_uint64("max-iterations", 0, "Maximum amount of iterations. 0 means no limit");
+    uint64_t *threads_count = flag_uint64("threads-count", 16, "Threads count");
     bool *help = flag_bool("help", false, "Print this help");
     char **input_file = flag_str("input-file", NULL, "Input text file (MANDATORY)");
     char **output_dir = flag_str("output-dir", NULL, "Output directory (MANDATORY)");\
@@ -145,6 +171,8 @@ int main(int argc, char **argv) {
     }
 
     const char *output_dir_path = *output_dir;
+
+    if (*threads_count <= 0) *threads_count = 1;
     int output_dir_exists = file_exists(output_dir_path);
     if (output_dir_exists < 0) return 1;
     if (output_dir_exists) {
@@ -161,6 +189,7 @@ int main(int argc, char **argv) {
     Freq *merged_freq = NULL;
     Pairs pairs = {0};
 
+    Tokens tokens_in = {0};
     Tokens tokens_out = {0};
 
     // 0   => { .l = 0, .r = ??? }
@@ -178,25 +207,25 @@ int main(int argc, char **argv) {
     }
 
 #ifdef ENABLE_THREADS
+    pthread_barrier_t collect_freqs_start = {0};
+    pthread_barrier_t collect_freqs_stop  = {0};
     int ret;
-    ret = pthread_barrier_init(&collect_freqs_start, NULL, THREAD_COUNT + 1);
+    ret = pthread_barrier_init(&collect_freqs_start, NULL, (*threads_count) + 1);
     if (ret != 0) {
         fprintf(stderr, "ERROR: could not initialize collect_freqs_start: %s\n", strerror(ret));
         return 1;
     }
 
-    ret = pthread_barrier_init(&collect_freqs_stop, NULL, THREAD_COUNT + 1);
+    ret = pthread_barrier_init(&collect_freqs_stop, NULL, (*threads_count) + 1);
     if (ret != 0) {
         fprintf(stderr, "ERROR: could not initialize collect_freqs_stop: %s\n", strerror(ret));
         return 1;
     }
 
-    for (size_t id = 0; id < THREAD_COUNT; ++id) {
-        ret = pthread_create(&threads[id], NULL, freq_collector_thread, (void*)(uintptr_t)id);
-        if (ret != 0) {
-            fprintf(stderr, "ERROR: could not create thread: %s\n", strerror(ret));
-            return 1;
-        }
+    Freq_Collector_Thread_Context *ctxs = calloc(*threads_count, sizeof(*ctxs));
+    assert(ctxs != NULL);
+    for (size_t id = 0; id < *threads_count; ++id) {
+        create_freq_collector_thread(&ctxs[id], id, *threads_count, &tokens_in, &collect_freqs_start, &collect_freqs_stop);
     }
 #endif // ENABLE_THREADS
 
@@ -220,13 +249,13 @@ int main(int argc, char **argv) {
         pthread_barrier_wait(&collect_freqs_start);
         pthread_barrier_wait(&collect_freqs_stop);
 
-        for (size_t id = 0; id < THREAD_COUNT; ++id ) {
-            size_t n = hmlen(freqs[id]);
+        for (size_t id = 0; id < *threads_count; ++id ) {
+            size_t n = hmlen(ctxs[id].freqs);
             for (size_t i = 0; i < n; ++i) {
-                Pair key = freqs[id][i].key;
+                Pair key = ctxs[id].freqs[i].key;
                 ptrdiff_t idx = hmgeti(merged_freq, key);
-                if (idx < 0) hmputs(merged_freq, freqs[id][i]);
-                else merged_freq[idx].value += freqs[id][i].value;
+                if (idx < 0) hmputs(merged_freq, ctxs[id].freqs[i]);
+                else merged_freq[idx].value += ctxs[id].freqs[i].value;
             }
         }
 #endif // ENABLE_THREADS

@@ -30,6 +30,7 @@ A slightly modified version of this algorithm is widely used in tokenizers for l
     -report-freq <int>      # progress reporting frequency (default: 10)
     -dump-freq <int>        # dump state frequency (default: 10)
     -term-freq <int>        # termination pair frequency (default: 1)
+    -threads-count <int>    # Threads count (default: 16, 1 if negative value is given)
     -max-iterations <int>   # max iterations, 0 = no limit (default: 0)
     ```
 
