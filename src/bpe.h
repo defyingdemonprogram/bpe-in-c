@@ -28,5 +28,6 @@ typedef struct {
 bool dump_pairs(const char *file_path, Pairs pairs);
 bool dump_tokens(const char *file_path, Tokens tokens);
 bool load_pairs(const char *file_path, Pairs *pairs, String_Builder *sb);
+bool load_tokens(const char *file_path, Tokens *tokens, String_Builder *sb);
 void render_token(Pairs pairs, uint32_t token, String_Builder *sb);
 #endif // BPE_H_

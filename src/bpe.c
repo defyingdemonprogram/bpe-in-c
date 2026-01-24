@@ -19,6 +19,7 @@ bool dump_pairs(const char *file_path, Pairs pairs) {
 }
 
 bool load_pairs(const char *file_path, Pairs *pairs, String_Builder *sb) {
+    sb->count = 0;
     if (!read_entire_file(file_path, sb)) return false;
     if (sb->count % sizeof(*pairs->items) != 0) {
         nob_log(ERROR, "%s: file size in bytes (%zu) must be divisible by %zu\n", file_path, sb->count, sizeof(*pairs->items));
@@ -44,15 +45,30 @@ bool load_pairs(const char *file_path, Pairs *pairs, String_Builder *sb) {
         da_append(pairs, items[i]);
     }
     for (uint32_t i = BPE_PRELUDE_SIZE; i < items_count; ++i) {
-        if (items[i].l >= items_count) {
-            nob_log(ERROR, "%s: pair %u: Right subtoken is %u >= %zu", file_path, i, items[i].l, items_count);
+        if (items[i].l >= i) {
+            nob_log(ERROR, "%s: pair %u: Left subtoken is %u >= %u", file_path, i, items[i].l, i);
             return false;
         }
-        if (items[i].r >= items_count) {
-            nob_log(ERROR, "%s: pair %u: Right subtoken is %u >= %zu", file_path, i, items[i].r, items_count);
+        if (items[i].r >= i) {
+            nob_log(ERROR, "%s: pair %u: Right subtoken is %u >= %u", file_path, i, items[i].r, i);
             return false;
         }
         da_append(pairs, items[i]);
+    }
+    return true;
+}
+
+bool load_tokens(const char *file_path, Tokens *tokens, String_Builder *sb) {
+    sb->count = 0;
+    if (!read_entire_file(file_path, sb)) return false;
+    if (sb->count % sizeof(*tokens->items) != 0) {
+        nob_log(ERROR, "%s: file size in bytes (%zu) must be divisible by %zu", file_path, sb->count, sizeof(*tokens->items));
+        return false;
+    }
+    uint32_t *items = (void*)sb->items;
+    size_t items_count = sb->count / sizeof(*tokens->items);
+    for (size_t i = 0; i < items_count; ++i) {
+        da_append(tokens, items[i]);
     }
     return true;
 }
