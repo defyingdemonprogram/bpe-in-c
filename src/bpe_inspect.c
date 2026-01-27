@@ -30,24 +30,27 @@ int main(int argc, char **argv) {
     }
 
     Pairs pairs = {0};
-    String_Builder sb = {0};
+    String_Builder sb_raw = {0};
+    String_Builder sb_out = {0};
 
-    if (!load_pairs(input_file_path, &pairs, &sb)) return 1;
+    if (!load_pairs(input_file_path, &pairs, &sb_raw)) return 1;
 
-    for (uint32_t token = 1; token < pairs.count; ++token) {
-        if (!no_ids) printf("%u => ", token);
-        sb.count = 0;
-        if (!no_ids) sb_appendf(&sb, "%u => ", token);
+    for (uint32_t token = 0; token < pairs.count; ++token) {
+        sb_raw.count = 0;
+        sb_out.count = 0;
 
-        sb_append_cstr(&sb, "\"");
-            sb.count = 0;
-            render_token(pairs, token, &sb);
-            c_strlit_escape_bytes(sb.items, sb.count, &sb);
-            sb_append_cstr(&sb, "\"\n");
-            sb_append_null(&sb);
-        render_token(pairs, token, &sb);
+        render_token(pairs, token, &sb_raw);
 
-        printf("%s", sb.items);
+        if (!no_ids) {
+            sb_appendf(&sb_out, "%u => ", token);
+        }
+
+        sb_append_cstr(&sb_out, "\"");
+        c_strlit_escape_bytes(sb_raw.items, sb_raw.count, &sb_out);
+        sb_append_cstr(&sb_out, "\"\n");
+        sb_append_null(&sb_out);
+
+        printf("%s", sb_out.items);
     }
 
     return 0;
