@@ -73,5 +73,20 @@ bool load_tokens(const char *file_path, Tokens *tokens, String_Builder *sb) {
     return true;
 }
 
+void c_strlit_escape_bytes(const char *bytes, size_t bytes_size, String_Builder *sb_out) {
+
+    for (size_t i = 0; i < bytes_size; ++i) {
+        if (bytes[i] == '"') {
+            sb_append_cstr(sb_out, "\\\"");
+        } else if (bytes[i] == '\\') {
+            sb_append_cstr(sb_out, "\\\\");
+        } else if (isprint(bytes[i])) {
+            da_append(sb_out, bytes[i]);
+        } else {
+            sb_appendf(sb_out, "\\x%02X", (uint8_t)bytes[i]);
+        }
+    }
+}
+
 #define NOB_IMPLEMENTATION
 #include "nob.h"

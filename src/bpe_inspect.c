@@ -36,21 +36,18 @@ int main(int argc, char **argv) {
 
     for (uint32_t token = 1; token < pairs.count; ++token) {
         if (!no_ids) printf("%u => ", token);
-        printf("\"");
         sb.count = 0;
+        if (!no_ids) sb_appendf(&sb, "%u => ", token);
+
+        sb_append_cstr(&sb, "\"");
+            sb.count = 0;
+            render_token(pairs, token, &sb);
+            c_strlit_escape_bytes(sb.items, sb.count, &sb);
+            sb_append_cstr(&sb, "\"\n");
+            sb_append_null(&sb);
         render_token(pairs, token, &sb);
-        for (size_t i = 0; i < sb.count; ++i) {
-            if (sb.items[i] == '"') {
-                printf("\\\"");
-            } else if (sb.items[i] == '\\') {
-                printf("\\\\");
-            } else if (isprint(sb.items[i])) {
-                printf("%c", sb.items[i]);
-            } else {
-                printf("\\x%02X", (uint8_t)sb.items[i]);
-            }
-        }
-        printf("\"\n");
+
+        printf("%s", sb.items);
     }
 
     return 0;
