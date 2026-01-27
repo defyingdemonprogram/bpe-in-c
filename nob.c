@@ -26,7 +26,5 @@ int main(int argc, char **argv) {
     if (!build_tool(&cmd, SRC_DIR"tkn_inspect.c", BUILD_DIR"tkn_inspect")) return 1;
     if (!build_tool(&cmd, SRC_DIR"bpe_gen.c", BUILD_DIR"bpe_gen")) return 1;
 
-    nob_cmd_append(&cmd, "./build/text2bpe",  "samples/bigfile.txt", "big.bpe");
-    // if (!nob_cmd_run_sync_and_reset(&cmd)) return false;
     return 0;
 }

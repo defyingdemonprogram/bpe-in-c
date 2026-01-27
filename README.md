@@ -5,48 +5,72 @@ Byte Pair Encoding (BPE) is a compression algorithm originally introduced in 199
 A slightly modified version of this algorithm is widely used in tokenizers for large language models. While the original BPE algorithm focuses on compression, its adaptation for tokenization replaces the most frequent byte pairs with new tokens that do not appear in the initial dataset.
 
 ## Quick Start
+Build the project
+```bash
+cc -o nob nob.c # only one time
+./nob
+```
 
-1. Build the project using `nob`:
+### text2bpe
 
-    ```bash
-    cc -o nob nob.c  # run this only the first time
-    ./nob
-    ```
+Encodes a text file into BPE merges by iteratively replacing the most frequent byte pairs with new tokens.
 
-2. Run the executable
+```bash
+./build/text2bpe -input-file samples/file-1.txt -output-dir output
+```
 
-    ```bash
-    ./build/text2bpe -input-file <input.txt> -output-dir <output-dir>
-    ```
+**Options:**
+- `-report-freq <int>`: Frequency of progress reporting (default: 10)
+- `-dump-freq <int>`: Frequency of state dumping (default: 10)
+- `-term-freq <int>`: Termination frequency; stops when no pair frequency exceeds this (default: 1)
+- `-threads-count <int>`: Number of threads to use (default: 16)
+- `-max-iterations <int>`: Maximum number of iterations (0 = no limit, default: 0)
 
-    * `<input.txt>`: input text used to generate BPE merges
-    * `<output-dir>`: directory where BPE iteration files will be written
+### bpe_inspect
 
-    By default, the tool runs until no pair exceeds the termination frequency and dumps progress every 10 iterations. Each iteration is written to `<output-dir>` as `<iteration>.bpe`.
+Displays the mapping of token IDs to their string representations from a `.bpe` file.
 
-    Optional flags:
+```bash
+./build/bpe_inspect output/92.bpe
+```
 
-    ```bash
-    -report-freq <int>      # progress reporting frequency (default: 10)
-    -dump-freq <int>        # dump state frequency (default: 10)
-    -term-freq <int>        # termination pair frequency (default: 1)
-    -threads-count <int>    # Threads count (default: 16, 1 if negative value is given)
-    -max-iterations <int>   # max iterations, 0 = no limit (default: 0)
-    ```
+**Options:**
+- `--no-ids`: Print only the rendered tokens without their numeric IDs.
 
-3. Visualize BPE merges (optional)
+### tkn_inspect
 
-    Convert a `.bpe` file to Graphviz `.dot` format:
+Inspects the contents of a `.tkn` (tokenized sequence) file, optionally rendering it back to text.
 
-    ```bash
-    ./build/bpe2dot <input.bpe> <output.dot>
-    ```
+```bash
+./build/tkn_inspect -bpe output/92.bpe -tkn output/92.tkn -render -ids -split
+```
 
-    Generate a PNG from the `.dot` file:
+**Options:**
+- `-ids`: Print the numeric IDs of the tokens.
+- `-render`: Render the tokens back into their string representation.
+- `-split`: When rendering, separate tokens with a pipe `|` character.
 
-    ```bash
-    dot -Tpng output.dot -o output.png
-    ```
+### bpe_gen
+
+Generates a random sequence of tokens based on a `.bpe` merge table.
+
+```bash
+./build/bpe_gen -bpe output/92.bpe -limit 50 -delim " "
+```
+
+**Options:**
+- `-limit <int>`: Maximum number of tokens to generate (default: 100).
+- `-delim <str>`: Delimiter to place between generated tokens.
+- `-seed <int>`: Random seed (default: 100, use 0 for time-based seed).
+
+### bpe2dot
+
+Visualizes the BPE merge hierarchy as a Graphviz directed graph.
+
+```bash
+./build/bpe2dot output/92.bpe output.dot
+dot -Tpng output.dot -o output.png
+```
 
 ## References
 
