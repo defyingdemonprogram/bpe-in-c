@@ -52,7 +52,8 @@ double begin_secs;
     #define PROFILE_END(...)
 #endif
 
-#define ENABLE_THREADS
+// #define ENABLE_THREADS
+#define INPLACE
 
 typedef struct {
     size_t id;
@@ -278,44 +279,104 @@ int main(int argc, char **argv) {
         if (iteration % (*report_freq) == 0) report_progress(iteration, tokens_in, pairs, profile_samples, *report_freq);
         if (iteration % (*dump_freq)   == 0) if (!dump_state(iteration, output_dir_path, pairs, tokens_in)) return 1;
         double begin_secs = get_secs();
-        hmfree(freq);
+
+#ifdef INPLACE
+         hmfree(freq);
 #ifdef ENABLE_THREADS
         freq = freq_collector_go(&fc);
 #else
         freq = collect_freqs(tokens_in);
 #endif // ENABLE_THREADS
+#endif // INPLACE
 
         ptrdiff_t max_index = 0;
         size_t n = hmlen(freq);
         if (n == 0) break;
         for (size_t i = 1; i < n; ++i) {
-            if (freq[i].value > freq[max_index].value) {
+            if (freq[i].value > freq[max_index].value || (freq[i].value == freq[max_index].value && memcmp(&freq[i].key, &freq[max_index].key, sizeof(freq[i].key)) >0)) {
                 max_index = i;
             }
         }
 
         if (freq[max_index].value <= (*term_freq)) break; // Compression is finished
+        Pair max_pair = freq[max_index].key;
+        uint32_t max_token = pairs.count;
+        // printf("(%d, %d) => %zu\n", max_pair.l, max_pair.r, freq[max_index].value);
 
-        // printf("(%d, %d) => %zu\n", freq[max_index].key.l, freq[max_index].key.r, freq[max_index].value);
-
-        da_append(&pairs, freq[max_index].key);
+        da_append(&pairs, max_pair);
 
         tokens_out.count = 0;  // Clear the garbage before feeding to token out
+#ifdef INPLACE
         for (size_t i = 0; i < tokens_in.count; ) {
             if (i + 1 >= tokens_in.count) {
                 da_append(&tokens_out, tokens_in.items[i]);
                 i += 1;
             } else {
+                ptrdiff_t place;
                 Pair pair = {.l = tokens_in.items[i], .r = tokens_in.items[i + 1]};
-                if (memcmp(&pair, &freq[max_index].key, sizeof(pair)) == 0) {
+                if (memcmp(&pair, &max_pair, sizeof(pair)) == 0) {
+                    if (tokens_out.count > 0) {
+                        pair.l = tokens_out.items[tokens_out.count - 1];
+                        pair.r = tokens_in.items[i];
+
+                        place = hmgeti(freq, pair);
+                        assert(place >= 0);
+                        assert(freq[place].value > 0);
+                        freq[place].value -= 1;
+
+                        pair.r = max_token;
+                        ptrdiff_t place = hmgeti(freq, pair);
+                        if (place < 0) hmput(freq, pair, 1);
+                        else freq[place].value += 1;
+                    }
+
+                    pair = max_pair;
+                    place = hmgeti(freq, pair);
+                    assert(place >= 0);
+                    assert(freq[place].value > 0);
+                    freq[place].value -= 1;
+
                     da_append(&tokens_out, pairs.count - 1);
                     i += 2;
+
+                    if (i < tokens_in.count) {
+                        pair.r = tokens_in.items[i];
+                        pair.l = tokens_in.items[i-1];
+                        place = hmgeti(freq, pair);
+                        assert(place >= 0);
+                        assert(freq[place].value > 0);
+                        freq[place].value -= 1;
+
+                        pair.l = tokens_out.items[tokens_out.count - 1];
+                        ptrdiff_t place = hmgeti(freq, pair);
+                        if (place < 0) hmput(freq, pair, 1);
+                        else freq[place].value += 1;
+                    }
                 } else {
                     da_append(&tokens_out, tokens_in.items[i]);
                     i += 1;
                 }
             }
         }
+#else
+        for (size_t i = 0; i < tokens_in.count; ) {
+                if (i + 1 >= tokens_in.count) {
+                    da_append(&tokens_out, tokens_in.items[i]);
+                    i += 1;
+                } else {
+                    Pair pair;
+                    pair.l = tokens_in.items[i];
+                    pair.r = tokens_in.items[i + 1];
+                    if (memcmp(&pair, &max_pair, sizeof(pair)) == 0) {
+                        da_append(&tokens_out, max_token);
+                        i += 2;
+                    } else {
+                        da_append(&tokens_out, tokens_in.items[i]);
+                        i += 1;
+                    }
+                }
+            }
+#endif
         profile_samples[iteration%(*report_freq)] = get_secs() - begin_secs;
         swap(Tokens, tokens_in, tokens_out);
     }
