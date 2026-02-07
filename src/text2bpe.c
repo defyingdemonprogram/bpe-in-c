@@ -20,7 +20,11 @@
     } while(0)
 
 typedef struct {
-    Pair key;
+    uint32_t l, r;
+} PairKey;
+
+typedef struct {
+    PairKey key;
     size_t value;
 } Freq;
 
@@ -55,12 +59,12 @@ double begin_secs;
 Freq *collect_freqs(Tokens tokens_in) {
     Freq *freq = NULL;
     for (size_t i = 0; i < tokens_in.count - 1; ++i) {
-        Pair pair = {
+        PairKey key = {
             .l = tokens_in.items[i], 
             .r = tokens_in.items[i + 1]
         };
-        ptrdiff_t idx = hmgeti(freq, pair);
-        if (idx < 0) hmput(freq, pair, 1);
+        ptrdiff_t idx = hmgeti(freq, key);
+        if (idx < 0) hmput(freq, key, 1);
         else freq[idx].value += 1;
     }
     return freq;
@@ -186,9 +190,13 @@ int main(int argc, char **argv) {
         }
 
         if (freq[max_index].value <= (*term_freq)) break; // Compression is finished
-        Pair max_pair = freq[max_index].key;
+        PairKey max_pair_key = freq[max_index].key;
         uint32_t max_token = pairs.count;
-        // printf("(%d, %d) => %zu\n", max_pair.l, max_pair.r, freq[max_index].value);
+        Pair max_pair = {
+            .l = max_pair_key.l,
+            .r = max_pair_key.r,
+            .freq = freq[max_index].value
+        };
 
         da_append(&pairs, max_pair);
 
@@ -199,43 +207,47 @@ int main(int argc, char **argv) {
                 i += 1;
             } else {
                 ptrdiff_t place;
-                Pair pair = {.l = tokens_in.items[i], .r = tokens_in.items[i + 1]};
-                if (memcmp(&pair, &max_pair, sizeof(pair)) == 0) {
+                PairKey key = {.l = tokens_in.items[i], .r = tokens_in.items[i + 1]};
+                if (key.l == max_pair_key.l && key.r == max_pair_key.r) {
                     if (tokens_out.count > 0) {
-                        pair.l = tokens_out.items[tokens_out.count - 1];
-                        pair.r = tokens_in.items[i];
+                        PairKey pair_key = {
+                            .l = tokens_out.items[tokens_out.count - 1],
+                            .r = tokens_in.items[i]
+                        };
 
-                        place = hmgeti(freq, pair);
+                        place = hmgeti(freq, pair_key);
                         assert(place >= 0);
                         assert(freq[place].value > 0);
                         freq[place].value -= 1;
 
-                        pair.r = max_token;
-                        ptrdiff_t place = hmgeti(freq, pair);
-                        if (place < 0) hmput(freq, pair, 1);
+                        pair_key.r = max_token;
+                        place = hmgeti(freq, pair_key);
+                        if (place < 0) hmput(freq, pair_key, 1);
                         else freq[place].value += 1;
                     }
 
-                    pair = max_pair;
-                    place = hmgeti(freq, pair);
+                    PairKey self_key = max_pair_key;
+                    place = hmgeti(freq, self_key);
                     assert(place >= 0);
                     assert(freq[place].value > 0);
                     freq[place].value -= 1;
 
-                    da_append(&tokens_out, pairs.count - 1);
+                    da_append(&tokens_out, max_token);
                     i += 2;
 
                     if (i < tokens_in.count) {
-                        pair.r = tokens_in.items[i];
-                        pair.l = tokens_in.items[i-1];
-                        place = hmgeti(freq, pair);
+                        PairKey pair_key = {
+                            .l = tokens_in.items[i-1],
+                            .r = tokens_in.items[i]
+                        };
+                        place = hmgeti(freq, pair_key);
                         assert(place >= 0);
                         assert(freq[place].value > 0);
                         freq[place].value -= 1;
 
-                        pair.l = tokens_out.items[tokens_out.count - 1];
-                        ptrdiff_t place = hmgeti(freq, pair);
-                        if (place < 0) hmput(freq, pair, 1);
+                        pair_key.l = max_token;
+                        place = hmgeti(freq, pair_key);
+                        if (place < 0) hmput(freq, pair_key, 1);
                         else freq[place].value += 1;
                     }
                 } else {

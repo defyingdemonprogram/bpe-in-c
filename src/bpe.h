@@ -17,6 +17,7 @@ typedef struct {
 
 typedef struct {
     uint32_t l, r;
+    uint64_t freq;
 } Pair;
 
 typedef struct {

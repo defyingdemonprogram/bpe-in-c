@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
         render_token(pairs, token, &sb_raw);
 
         if (!no_ids) {
-            sb_appendf(&sb_out, "%u => ", token);
+            sb_appendf(&sb_out, "%u => (%zu) ", token, pairs.items[token].freq);
         }
 
         sb_append_cstr(&sb_out, "\"");
